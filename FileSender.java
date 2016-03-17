@@ -6,7 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.zip.CRC32;
 
-import FileSender.ACKThread;
+//import FileSender.ACKThread;
 
 import java.io.*;
 import java.util.*;
@@ -132,16 +132,7 @@ public class FileSender {
 							packet[i + 4] = sendData[i];
 						}
 
-					} else { // if no data
-//						sendData = "END".getBytes();
-//						packet[0] = convertToBytes(seqNum)[0];
-//						packet[1] = convertToBytes(seqNum)[1];
-//						endPktNo = seqNum;
-//						packet[2] = convertToBytes((short) checkSum(sendData))[0];
-//						packet[3] = convertToBytes((short) checkSum(sendData))[1];
-//						for (int i = 0; i < sendData.length; i++) {
-//							packet[i + 4] = sendData[i];
-//						}
+					} else { 
 						break;
 					}
 				}
@@ -186,5 +177,26 @@ public class FileSender {
 		return crc.getValue();
 
 	}
+	public  byte[] convertToBytes(long n) {
+        byte[] bytes = new byte[8];
 
+        bytes[7] = (byte) (n);
+        n >>>= 8;
+        bytes[6] = (byte) (n);
+        n >>>= 8;
+        bytes[5] = (byte) (n);
+        n >>>= 8;
+        bytes[4] = (byte) (n);
+        n >>>= 8;
+        bytes[3] = (byte) (n);
+        n >>>= 8;
+        bytes[2] = (byte) (n);
+        n >>>= 8;
+        bytes[1] = (byte) (n);
+        n >>>= 8;
+        bytes[0] = (byte) (n);
+
+        return bytes;
+    }
 }
+
