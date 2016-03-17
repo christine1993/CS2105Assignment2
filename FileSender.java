@@ -1,4 +1,4 @@
-
+// kakak
 // <Wang Hanyu A0105664H>
 
 import java.net.*;
@@ -97,7 +97,7 @@ public class FileSender {
 		// packet used to receive response
 		ACKThread ackThread = new ACKThread();
 		ackThread.start();
-		while (true && ackThread.isAlive()) {
+		while (true) {
 			if (flag == 0) { // if this packet is first packet containing name
 				// first 2: seq num
 				// second 2: checksum

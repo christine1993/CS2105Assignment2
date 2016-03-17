@@ -1,4 +1,4 @@
-
+// lalala
 // <Wang Hanyu A0105664H>
 
 import java.net.*;
@@ -43,13 +43,13 @@ class FileReceiver {
 		byte[] rcvBuffer = new byte[1000];
 		rcvedpkt = new DatagramPacket(rcvBuffer, rcvBuffer.length);
 
-		socket.receive(rcvedpkt);
+		socket.receive(rcvedpkt); //// what if 1st package is missed
 		fileName = new String(Arrays.copyOfRange(rcvBuffer, 4, 1000));
 		FileOutputStream fos = new FileOutputStream(fileName.trim());
 		BufferedOutputStream bos = new BufferedOutputStream(fos);
 
 		String str = new String(rcvedpkt.getData(), 0, rcvedpkt.getLength());
-		while (!str.trim().equals("END")) {
+		while (!str.trim().equals("END")) { //// end condition must secure all packages arrived
 			// construct and send response
 			byte[] responseByte = new byte[8];
 			short checkSumCompute = (short) checkSum(Arrays.copyOfRange(rcvBuffer, 4, 1000));
@@ -83,17 +83,14 @@ class FileReceiver {
 					nextSeqNo++;
 					// if before receiving this packet, some packets are
 					// buffered
-					if (unACKedSeqNo.contains(seqNum)) {
-						while (buffer.containsKey(nextSeqNo)) {
-							bos.write(buffer.get(nextSeqNo), 0, buffer.get(nextSeqNo).length);
-							buffer.remove(nextSeqNo);
-							nextSeqNo++;
-						}
-						unACKedSeqNo.remove(seqNum);
+					while (buffer.containsKey(nextSeqNo)) {
+						bos.write(buffer.get(nextSeqNo), 0, buffer.get(nextSeqNo).length);
+						buffer.remove(nextSeqNo);
+						nextSeqNo++;
 					}
+					
 				} else {
-					if (!unACKedSeqNo.contains(nextSeqNo))
-						unACKedSeqNo.add(nextSeqNo);
+					
 					buffer.put(seqNum, Arrays.copyOfRange(rcvBuffer, 4, 1000));
 				}
 				socket.receive(rcvedpkt);
