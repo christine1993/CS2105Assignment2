@@ -4,7 +4,6 @@
 import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.Arrays;
 import java.util.zip.CRC32;
 import java.io.*;
 import java.util.*;
@@ -13,12 +12,15 @@ public class FileSender {
 
 	public DatagramSocket socket;
 	public DatagramPacket pkt;
+	public int clientPort;
+	public InetAddress clientAddress ;
 	public final int WINDOW_SIZE = 10;
 	public int window_left = 10;
 	public short baseIndex = 0;
 	public static ArrayList<Short> receivedACKSeqNo = new ArrayList<Short>();
 	public static ArrayList<Short> unACKedSeqNo = new ArrayList<Short>();
-	public static ArrayList<byte[]> buffer = new ArrayList<byte[]>();
+	public static HashMap<Short, byte[]> buffer = new HashMap<Short, byte[]>();
+
 	public short endPktNo;
 
 	// ack thread
@@ -44,10 +46,12 @@ public class FileSender {
 							} 
 							unACKedSeqNo.remove(new Short(seqNumReceived));
 							receivedACKSeqNo.add(new Short(seqNumReceived));
+							FileSender.buffer.remove(seqNumReceived);
 						}
 					}else{       
 					//resend the packet
-						socket.send(FileSender.packets.get(threadSeqNo));
+						DatagramPacket resendpkt=new DatagramPacket(FileSender.buffer.get(seqNumReceived),FileSender.buffer.get(seqNumReceived).length,clientAddress, clientPort);
+						socket.send(resendpkt);
 					}
 					socket.receive(rcvedpkt);
 
@@ -76,15 +80,15 @@ public class FileSender {
 	}
 
 	public FileSender(String fileToOpen, String host, String port, String rcvFileName) throws Exception {
-		int clientPort = Integer.parseInt(port);
+		clientPort = Integer.parseInt(port);
+		clientAddress = InetAddress.getByName(host);
 
 		socket = new DatagramSocket();
 
 		FileInputStream fis = new FileInputStream(fileToOpen);
 		BufferedInputStream bis = new BufferedInputStream(fis);
 
-		InetAddress clientAddress = InetAddress.getByName(host);
-
+		
 		short seqNum = 0;
 		byte[] packet = new byte[1000];
 		byte[] sendData = new byte[996];
@@ -133,6 +137,7 @@ public class FileSender {
 				}
 			}
 			unACKedSeqNo.add(new Short(seqNum));
+			buffer.put(seqNum, packet);
 			pkt = new DatagramPacket(packet, packet.length, clientAddress, clientPort);
 			socket.send(pkt);
 			seqNum++;
