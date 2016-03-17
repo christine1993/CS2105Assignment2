@@ -5,6 +5,9 @@ import java.net.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.zip.CRC32;
+
+import FileSender.ACKThread;
+
 import java.io.*;
 import java.util.*;
 
@@ -80,6 +83,9 @@ public class FileSender {
 	}
 
 	public FileSender(String fileToOpen, String host, String port, String rcvFileName) throws Exception {
+		File file =new File(fileToOpen);
+		long sizeOfFile=file.length();
+		
 		clientPort = Integer.parseInt(port);
 		clientAddress = InetAddress.getByName(host);
 
@@ -108,6 +114,10 @@ public class FileSender {
 				packet[3] = convertToBytes((short) checkSum(rcvFileName.getBytes()))[1];
 				for (int i = 0; i < sendData.length; i++) {
 					packet[i + 4] = sendData[i];
+				}  
+				// write the length of file from packet[500]
+				for(int i=0;i<convertToBytes(sizeOfFile).length;i++){
+					packet[500+i] =convertToBytes(sizeOfFile)[i];
 				}
 				flag++;
 			} else {
@@ -123,15 +133,15 @@ public class FileSender {
 						}
 
 					} else { // if no data
-						sendData = "END".getBytes();
-						packet[0] = convertToBytes(seqNum)[0];
-						packet[1] = convertToBytes(seqNum)[1];
-						endPktNo = seqNum;
-						packet[2] = convertToBytes((short) checkSum(sendData))[0];
-						packet[3] = convertToBytes((short) checkSum(sendData))[1];
-						for (int i = 0; i < sendData.length; i++) {
-							packet[i + 4] = sendData[i];
-						}
+//						sendData = "END".getBytes();
+//						packet[0] = convertToBytes(seqNum)[0];
+//						packet[1] = convertToBytes(seqNum)[1];
+//						endPktNo = seqNum;
+//						packet[2] = convertToBytes((short) checkSum(sendData))[0];
+//						packet[3] = convertToBytes((short) checkSum(sendData))[1];
+//						for (int i = 0; i < sendData.length; i++) {
+//							packet[i + 4] = sendData[i];
+//						}
 						break;
 					}
 				}

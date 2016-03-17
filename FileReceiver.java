@@ -1,4 +1,5 @@
 
+// lalala
 // <Wang Hanyu A0105664H>
 
 import java.net.*;
@@ -14,7 +15,6 @@ class FileReceiver {
 	public short nextSeqNo = 0; // the expected packet
 	public short seqNum;
 	public static ArrayList<Short> receivedACKSeqNo = new ArrayList<Short>();
-	public static ArrayList<Short> unACKedSeqNo = new ArrayList<Short>();
 	public static HashMap<Short, byte[]> buffer = new HashMap<Short, byte[]>();
 
 	public static void main(String[] args) {
@@ -43,13 +43,11 @@ class FileReceiver {
 		byte[] rcvBuffer = new byte[1000];
 		rcvedpkt = new DatagramPacket(rcvBuffer, rcvBuffer.length);
 
-		socket.receive(rcvedpkt);
-		fileName = new String(Arrays.copyOfRange(rcvBuffer, 4, 1000));
-		FileOutputStream fos = new FileOutputStream(fileName.trim());
-		BufferedOutputStream bos = new BufferedOutputStream(fos);
+		socket.receive(rcvedpkt); //// what if 1st package is missed
 
 		String str = new String(rcvedpkt.getData(), 0, rcvedpkt.getLength());
-		while (!str.trim().equals("END")) {
+		while (true) { //// end condition must secure all packages arrived
+			socket.receive(rcvedpkt);
 			// construct and send response
 			byte[] responseByte = new byte[8];
 			short checkSumCompute = (short) checkSum(Arrays.copyOfRange(rcvBuffer, 4, 1000));
@@ -69,37 +67,44 @@ class FileReceiver {
 
 			for (int i = 0; i < response.getBytes().length; i++)
 				responseByte[i + 2] = response.getBytes()[i];
-
-			this.sendResponse(responseByte, serverAddress, portNumber); // send
-																		// response
-
+			
 			// unpack data
-			if (flag == 0) {
+			if (seqNum == 0 && nextSeqNo == 0) {
+				fileName = new String(Arrays.copyOfRange(rcvBuffer, 4, 1000));
+				FileOutputStream fos = new FileOutputStream(fileName.trim());
+				BufferedOutputStream bos = new BufferedOutputStream(fos);
 				System.out.println("File Name is " + fileName);
-				flag++;
+				nextSeqNo++;
+				while (buffer.containsKey(nextSeqNo)) {
+					bos.write(buffer.get(nextSeqNo), 0, buffer.get(nextSeqNo).length);
+					buffer.remove(nextSeqNo);
+					nextSeqNo++;
+				}
+
 			} else {
 				if (seqNum == nextSeqNo) {
 					bos.write(Arrays.copyOfRange(rcvBuffer, 4, 1000), 0, rcvedpkt.getLength());
 					nextSeqNo++;
 					// if before receiving this packet, some packets are
 					// buffered
-					if (unACKedSeqNo.contains(seqNum)) {
-						while (buffer.containsKey(nextSeqNo)) {
-							bos.write(buffer.get(nextSeqNo), 0, buffer.get(nextSeqNo).length);
-							buffer.remove(nextSeqNo);
-							nextSeqNo++;
-						}
-						unACKedSeqNo.remove(seqNum);
+					while (buffer.containsKey(nextSeqNo)) {
+						bos.write(buffer.get(nextSeqNo), 0, buffer.get(nextSeqNo).length);
+						buffer.remove(nextSeqNo);
+						nextSeqNo++;
 					}
-				} else {
-					if (!unACKedSeqNo.contains(nextSeqNo))
-						unACKedSeqNo.add(nextSeqNo);
+
+				}else if(seqNum < nextSeqNo) {
+					// discard by send ACK to stop it from retransmitting
+					for (int i = 0; i < "ACK".getBytes().length; i++)
+						responseByte[i + 2] = "ACK".getBytes()[i];
+				}
+				else {
 					buffer.put(seqNum, Arrays.copyOfRange(rcvBuffer, 4, 1000));
 				}
-				socket.receive(rcvedpkt);
-				str = new String(Arrays.copyOfRange(rcvBuffer, 4, 1000), 0, rcvedpkt.getLength());
-
 			}
+			//send response
+			this.sendResponse(responseByte, serverAddress, portNumber); // send
+
 		}
 
 		bos.flush();
