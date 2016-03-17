@@ -1,5 +1,3 @@
-
-// lalala
 // <Wang Hanyu A0105664H>
 
 import java.net.*;
