@@ -3,10 +3,10 @@
 // <Wang Hanyu A0105664H>
 
 import java.net.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.zip.CRC32;
-
-//import FileSender.ACKThread;
-
+import java.nio.*;
 import java.io.*;
 import java.util.*;
 
@@ -20,7 +20,6 @@ public class FileSender {
 	public int window_left = 10;
 	public short baseIndex = 0;
 	public static ArrayList<Short> receivedACKSeqNo = new ArrayList<Short>();
-	public static ArrayList<Short> unACKedSeqNo = new ArrayList<Short>();
 	public static HashMap<Short, byte[]> buffer = new HashMap<Short, byte[]>();
 
 	public boolean isEnd = false;
@@ -104,7 +103,7 @@ public class FileSender {
 
 		short seqNum = 0;
 		byte[] packet = new byte[1000];
-		byte[] sendData = new byte[996];
+		int numberOfPackages = (int) (Math.ceil(sizeOfFile/996.0)+1);
 		int flag = 0;
 
 		// packet used to receive response
@@ -114,6 +113,7 @@ public class FileSender {
 	    System.out.println("---------------------------------AFTER START OF TREAD---------------------------------");
 
 		while (ackThread.isAlive()) {
+			byte[] sendData = new byte[996];
 			if (flag == 0) { // if this packet is first packet containing name
 			    System.out.println("----------------------------THIS IS THE FIRST PACKET---------------------------------");
 
@@ -133,7 +133,7 @@ public class FileSender {
 				packet[3] = convertToBytes((short) checkSum(Arrays.copyOfRange(packet, 4, 1000)))[1];
 			    System.out.println("-------------------------FILE NAME IS------"+sendData);	
 				flag++;
-			} else if (seqNum >= baseIndex && seqNum < (baseIndex + WINDOW_SIZE)) {
+			} else if (seqNum >= baseIndex && seqNum < (baseIndex + WINDOW_SIZE) && seqNum < numberOfPackages) {
 				System.out.println("-------------------------seq number inside window------ ");
 				if ((bis.read(sendData)) >= 0) {
 					packet = new byte[1000];
@@ -149,7 +149,6 @@ public class FileSender {
 				continue;
 			}
 			System.out.println("-------------------------Sending packet number------ "+seqNum);
-			unACKedSeqNo.add(new Short(seqNum));
 			buffer.put(seqNum, packet);
 			pkt = new DatagramPacket(packet, packet.length, clientAddress, clientPort);
 			socket.send(pkt);
@@ -172,9 +171,9 @@ public class FileSender {
 	}
 
 	public short convertToShort(byte[] byteArray) {
-		short value1 = (short) (byteArray[0] << 8);
-		short value2 = (short) (byteArray[1]);
-		return (short) (value1 | value2);
+		short[] ans = new short[1];;
+		ByteBuffer.wrap(byteArray).order(ByteOrder.BIG_ENDIAN).asShortBuffer().get(ans);
+		return ans[0];
 	}
 
 	public long checkSum(byte[] bytes) {
