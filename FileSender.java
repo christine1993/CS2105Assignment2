@@ -9,20 +9,70 @@ import java.util.zip.CRC32;
 import java.nio.*;
 import java.io.*;
 import java.util.*;
+import java.util.concurrent.*;
 
 public class FileSender {
 
+	public final int TIME_OUT_NS = 1000000000; // 1000ms
 	public DatagramSocket socket;
-	public DatagramPacket pkt;
 	public int clientPort;
 	public InetAddress clientAddress;
 	public final int WINDOW_SIZE = 10;
 	public int window_left = 10;
-	public short baseIndex = 0;
+	public Short baseIndex = 0;
 	public static ArrayList<Short> receivedACKSeqNo = new ArrayList<Short>();
-	public static HashMap<Short, byte[]> buffer = new HashMap<Short, byte[]>();
-
+	Map<String, String> map = Collections.synchronizedMap(
+			  new LinkedHashMap<String, String>());
+	public static Map<Short, byte[]> buffer = Collections.synchronizedMap(new LinkedHashMap<Short, byte[]>());
+	public static Map<Short, Long> timer = new ConcurrentHashMap<Short, Long>();
 	public boolean isEnd = false;
+	
+	// timer thread
+	class TimerThread extends Thread {
+		TimerThread() {
+			super("my timer thread");
+		}
+
+		public synchronized void run() {
+			try {
+				System.out.println("-----------------Timer is running--------------------");
+				while (!isEnd) {
+					System.out.println("-----------------Now Timer size is "+FileSender.timer.size()+"--------------------");
+					if (!timer.isEmpty()) {
+						Iterator<Short> it = timer.keySet().iterator();
+						if (it!=null){
+						while(it.hasNext()) {
+							System.out.println("---------it.next--------");
+							Short seq = it.next();
+							if (timer.containsKey(seq) && buffer.containsKey(seq)) {
+								System.out.println("---------before timer.get(seq)--------");
+								Long thisTime = timer.get(seq);
+								System.out.println("---------after timer.get(seq)--------");
+								if (thisTime != null) {
+									Long timeDiff = System.nanoTime() - thisTime;
+									System.out.println("----------------- Time Diff for seq"+seq+"is "+timeDiff+"!--------------------");
+									if (timeDiff > TIME_OUT_NS) {
+										System.out.println("----------------- Package number "+seq+" times out! Resending!--------------------");
+										byte[] byteArray = FileSender.buffer.get(seq);
+										if (byteArray != null) {
+											DatagramPacket resendpkt = new DatagramPacket(byteArray, byteArray.length, clientAddress, clientPort);
+											socket.send(resendpkt);
+											if (buffer.containsKey(seq)) timer.put(seq, System.nanoTime());
+										}
+									}
+								}
+							}
+						}
+						}
+					}
+				}
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				System.out.println("TIMER tread Exception: " + e.getClass() + " " + e.getMessage() + e.getLocalizedMessage() + e.getCause());
+			}
+			System.out.println("Timer thread run is over");
+		}
+	}
 
 	// ack thread
 	class ACKThread extends Thread {
@@ -48,22 +98,36 @@ public class FileSender {
 						if (!receivedACKSeqNo.contains(seqNumReceived)) {
 							receivedACKSeqNo.add(new Short(seqNumReceived));
 							while (receivedACKSeqNo.contains(baseIndex)) {
-								receivedACKSeqNo.remove((Short)baseIndex);
+//								receivedACKSeqNo.remove((Short)baseIndex);
+								FileSender.timer.remove((Short)baseIndex);
 								FileSender.buffer.remove((Short)baseIndex);
 								baseIndex++;
 							} 	
+						} else {
+							if (!FileSender.buffer.isEmpty()) {
+								System.out.println("-----------------Resending--------------------");
+								System.out.println("-----------------Now Buffer size is "+FileSender.buffer.size()+"--------------------");
+								byte[] resendPackage = FileSender.buffer.values().iterator().next();
+								DatagramPacket resendpkt = new DatagramPacket(resendPackage, resendPackage.length, clientAddress, clientPort);
+								socket.send(resendpkt);
+							}
 						}
 					} else if (response.equals("NAK")) {
 						// resend the packet
 						System.out.println("-----------------NAK Received--------------------");
-						DatagramPacket resendpkt = new DatagramPacket(FileSender.buffer.get(seqNumReceived),
-								FileSender.buffer.get(seqNumReceived).length, clientAddress, clientPort);
-						socket.send(resendpkt);
+						if (!FileSender.buffer.isEmpty()) {
+							System.out.println("-----------------Resending--------------------");
+							System.out.println("-----------------Now Buffer size is "+FileSender.buffer.size()+"--------------------");
+							byte[] resendPackage = FileSender.buffer.values().iterator().next();
+							DatagramPacket resendpkt = new DatagramPacket(resendPackage, resendPackage.length, clientAddress, clientPort);
+							socket.send(resendpkt);
+							if (buffer.containsKey(baseIndex)) FileSender.timer.put((Short)baseIndex, System.nanoTime());
+						}
 					} else if (response.equals("FIN")) {
 						System.out.println("-----------------FIN Received--------------------");
+						isEnd = true;
 						return;
 					}
-
 				}
 			} catch (IOException e) {
 				// TODO Auto-generated catch block
@@ -95,7 +159,6 @@ public class FileSender {
 
 		clientPort = Integer.parseInt(port);
 		clientAddress = InetAddress.getByName(host);
-
 		socket = new DatagramSocket();
 
 		FileInputStream fis = new FileInputStream(fileToOpen);
@@ -108,9 +171,10 @@ public class FileSender {
 
 		// packet used to receive response
 		ACKThread ackThread = new ACKThread();
-	    System.out.println("---------------------------------BEFORE START OF TREAD---------------------------------");
-		//ackThread.start();
-	    System.out.println("---------------------------------AFTER START OF TREAD---------------------------------");
+		
+		// time-out thread
+		 TimerThread timerThread = new TimerThread();
+		 timerThread.start();
 
 		while (ackThread.isAlive()) {
 			byte[] sendData = new byte[996];
@@ -150,14 +214,14 @@ public class FileSender {
 			}
 			System.out.println("-------------------------Sending packet number------ "+seqNum);
 			buffer.put(seqNum, packet);
-			pkt = new DatagramPacket(packet, packet.length, clientAddress, clientPort);
+			timer.put(seqNum, System.nanoTime());
+			DatagramPacket pkt = new DatagramPacket(packet, packet.length, clientAddress, clientPort);
 			socket.send(pkt);
 			seqNum++;
 			//Thread.sleep(1000);
 		}
-
+		
 		System.out.println("File sent completed!");
-
 		bis.close();
 		System.exit(1);
 	}

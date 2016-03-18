@@ -62,6 +62,7 @@ class FileReceiver {
 			// to check whether the received packet is in order (not timed out
 			// and retransmitted)
 			seqNum = convertToShort(Arrays.copyOfRange(rcvBuffer, 0, 2));
+			System.out.println("Received Sequence Number is : "+seqNum);
 		    System.out.println("Next SeqNum expected is : "+nextSeqNo);
 		    
 			String response;
@@ -79,8 +80,8 @@ class FileReceiver {
 			int l = response.getBytes().length;
 			for (int i = 0; i < l; i++)
 				responseByte[i + 2] = response.getBytes()[i];
-			// unpack data
 			
+			// unpack data
 			if (seqNum == 0 && nextSeqNo == 0&&response.equals("ACK")) {
 				fileName = new String(Arrays.copyOfRange(rcvBuffer, 4, 500));
 				fileSize = convertToLong(Arrays.copyOfRange(rcvBuffer, 500, 508));
@@ -114,16 +115,15 @@ class FileReceiver {
 						nextSeqNo++;
 					}
 				} else if (seqNum < nextSeqNo) {
-					// discard by send ACK to stop it from retransmitting
-					for (int i = 0; i < "ACK".getBytes().length; i++)
-						responseByte[i + 2] = "ACK".getBytes()[i];
-				} else {
+				} else { // seqNum > nextSeqNum, save to buffer
 					if (seqNum == numberOfPackage-1) buffer.put(seqNum, Arrays.copyOfRange(rcvBuffer, 4, lastPackageLength));
 					else buffer.put(seqNum, Arrays.copyOfRange(rcvBuffer, 4, rcvedpkt.getLength()));
 				}
 			}
 			// send response
-			this.sendResponse(responseByte, serverAddress, destPortNumber); // send
+			responseByte[5] = convertToBytes((short) checkSum(Arrays.copyOfRange(responseByte, 0, 5)))[0];
+			responseByte[6] = convertToBytes((short) checkSum(Arrays.copyOfRange(responseByte, 0, 5)))[1];
+			this.sendResponse(responseByte, serverAddress, destPortNumber);
 			//Thread.sleep(1500)
 		}
         //send FIN
