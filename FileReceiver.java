@@ -2,7 +2,6 @@
 // <Wang Hanyu A0105664H>
 
 import java.net.*;
-import java.nio.ByteBuffer;
 import java.io.*;
 import java.util.*;
 import java.util.zip.CRC32;
@@ -24,53 +23,64 @@ class FileReceiver {
 			System.exit(1);
 		}
 		try {
-			new FileReceiver(args[0]);
+			FileReceiver fr=new FileReceiver();
+			fr.run(args[0]);
 		} catch (Exception ex) {
 			System.out.println("Exception during " + ex.getClass().toString());
 		}
 
 	}
 
-	public FileReceiver(String localPort) throws Exception {
+	public void run(String localPort) throws Exception {
 		InetAddress serverAddress = InetAddress.getByName("localhost");
 		int portNumber = Integer.parseInt(localPort);
 		System.out.println("local port is " + portNumber);
-		String fileName = new String();
+		String fileName = new String("dummy");
 		long fileSize = -1;
 		byte[] rcvBuffer = new byte[1000];
 		int count=0;
 		rcvedpkt = new DatagramPacket(rcvBuffer, rcvBuffer.length);
 		socket = new DatagramSocket(portNumber);
 
-		socket.receive(rcvedpkt); //// what if 1st package is missed
-
-		fileName = new String();
 		FileOutputStream fos = new FileOutputStream(fileName.trim());
 		BufferedOutputStream bos = new BufferedOutputStream(fos);
 
-		while (count!=(int)(Math.ceil(fileSize/1000.0)+1)) { //// end condition must secure all packages arrived
+		while (count!=(int)(Math.ceil(fileSize/996.0)+1)) { //// end condition must secure all packages arrived
 			socket.receive(rcvedpkt);
+			serverAddress=rcvedpkt.getAddress();
 			// construct and send response
 			byte[] responseByte = new byte[8];
 			short checkSumCompute = (short) checkSum(Arrays.copyOfRange(rcvBuffer, 4, 1000));
 			responseByte[0] = rcvBuffer[0];
 			responseByte[1] = rcvBuffer[1];
+			
+			
 			// to check whether the received packet is in order (not timed out
 			// and retransmitted)
 			seqNum = convertToShort(Arrays.copyOfRange(rcvBuffer, 0, 2));
-		
+		    System.out.println("Next SeqNum expected is : "+nextSeqNo);
+		    
 			String response;
+			
+			
+			System.out.println("CHECKSUM RECEIVED: "+this.convertToShort(Arrays.copyOfRange(rcvBuffer, 2,4)));
+			System.out.println("CHECKSUM COMPUTED: "+checkSumCompute);
+			
 			if (rcvBuffer[2] == this.convertToBytes(checkSumCompute)[0]
 					&& rcvBuffer[3] == this.convertToBytes(checkSumCompute)[1])
 				response = "ACK";
 			else
 				response = "NAK";
-
-			for (int i = 0; i < response.getBytes().length; i++)
+			System.out.println("-----------------RECEIVE PACKET "+seqNum+" "+response+"--------------------");
+			int l = response.getBytes().length;
+			for (int i = 0; i < l; i++)
 				responseByte[i + 2] = response.getBytes()[i];
-
 			// unpack data
-			if (seqNum == 0 && nextSeqNo == 0) {
+			
+			
+			
+			
+			if (seqNum == 0 && nextSeqNo == 0&&response.equals("ACK")) {
 				fileName = new String(Arrays.copyOfRange(rcvBuffer, 4, 500));
 				fileSize = convertToLong(Arrays.copyOfRange(rcvBuffer, 500, 508));
 				fos = new FileOutputStream(fileName.trim());
@@ -85,9 +95,13 @@ class FileReceiver {
 					count++;
 					nextSeqNo++;
 				}
-			} else {
+			} else if(response.equals("ACK")){
 				if (seqNum == nextSeqNo) {
-					bos.write(Arrays.copyOfRange(rcvBuffer, 4, 1000), 0, rcvedpkt.getLength());
+					System.out.println("-----------------Write PACKET "+seqNum+" --------------------");
+					System.out.println("rcvBuffer.length is "+rcvBuffer.length);
+					bos.write(Arrays.copyOfRange(rcvBuffer, 4, 1000), 0, 996);
+					
+
 					count++;
 					nextSeqNo++;
 					// if before receiving this packet, some packets are
@@ -109,9 +123,15 @@ class FileReceiver {
 			}
 			// send response
 			this.sendResponse(responseByte, serverAddress, portNumber); // send
+			Thread.sleep(1500);
+
 
 		}
-
+        //send FIN
+		 byte[] finishFlag= "FIN".getBytes();
+		 this.sendResponse(finishFlag, serverAddress, portNumber);
+		
+		
 		bos.flush();
 		bos.close();
 		socket.close();
@@ -124,8 +144,7 @@ class FileReceiver {
 			throws IOException, InterruptedException {
 		DatagramPacket pkt = new DatagramPacket(response, response.length, IPAddress, portNubmer);
 		socket.send(pkt);
-		Thread.sleep(1);
-
+		System.out.println("-----------------Sending Respond "+response+"--------------------");
 	}
 
 	public byte[] convertToBytes(short value) {
