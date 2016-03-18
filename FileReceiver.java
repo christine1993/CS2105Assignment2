@@ -39,6 +39,7 @@ class FileReceiver {
 		long fileSize = -1;
 		byte[] rcvBuffer = new byte[1000];
 		int count=0;
+		int destPortNumber=0;
 		rcvedpkt = new DatagramPacket(rcvBuffer, rcvBuffer.length);
 		socket = new DatagramSocket(portNumber);
 
@@ -48,6 +49,7 @@ class FileReceiver {
 		while (count!=(int)(Math.ceil(fileSize/996.0)+1)) { //// end condition must secure all packages arrived
 			socket.receive(rcvedpkt);
 			serverAddress=rcvedpkt.getAddress();
+			destPortNumber=rcvedpkt.getPort();
 			// construct and send response
 			byte[] responseByte = new byte[8];
 			short checkSumCompute = (short) checkSum(Arrays.copyOfRange(rcvBuffer, 4, 1000));
@@ -62,8 +64,8 @@ class FileReceiver {
 		    
 			String response;
 			
-			
-			System.out.println("CHECKSUM RECEIVED: "+this.convertToShort(Arrays.copyOfRange(rcvBuffer, 2,4)));
+			byte[] rcvCheckSum = {rcvBuffer[2], rcvBuffer[3]};
+			System.out.println("CHECKSUM RECEIVED: "+this.convertToShort(rcvCheckSum));
 			System.out.println("CHECKSUM COMPUTED: "+checkSumCompute);
 			
 			if (rcvBuffer[2] == this.convertToBytes(checkSumCompute)[0]
@@ -122,14 +124,12 @@ class FileReceiver {
 				}
 			}
 			// send response
-			this.sendResponse(responseByte, serverAddress, portNumber); // send
-			Thread.sleep(1500);
-
-
+			this.sendResponse(responseByte, serverAddress, destPortNumber); // send
+			//Thread.sleep(1500)
 		}
         //send FIN
 		 byte[] finishFlag= "FIN".getBytes();
-		 this.sendResponse(finishFlag, serverAddress, portNumber);
+		 this.sendResponse(finishFlag, serverAddress, destPortNumber);
 		
 		
 		bos.flush();

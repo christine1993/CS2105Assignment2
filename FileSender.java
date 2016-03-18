@@ -39,36 +39,29 @@ public class FileSender {
 				while (true) { // when comes to the end: this thread is not
 								// alive
 					// should it be added only if it falls within the window?
-					System.out.println("-----------------Inside thread loop--------------------");
+					System.out.println("-----------------Inside thread loop, baseIndex is"+baseIndex+"--------------------");
 					socket.receive(rcvedpkt);
 					short seqNumReceived = convertToShort(Arrays.copyOfRange(rcvedBuffer, 0, 2));
-					String response = new String(Arrays.copyOfRange(rcvedBuffer, 2, 8));
+					String response = new String(Arrays.copyOfRange(rcvedBuffer, 2, 5));
 					System.out.println("-----------------RECEIVE PACKET "+seqNumReceived+" "+response+"--------------------");
-					if (response == "ACK") {
+					if (response.equals("ACK")) {
+						System.out.println("-----------------ACK Received--------------------");
 						if (!receivedACKSeqNo.contains(seqNumReceived)) {
-							if (seqNumReceived == unACKedSeqNo.get(0)) { // if
-																			// seq
-																			// is
-																			// the
-																			// smallest
-																			// unACKed
-																			// pkt,
-																			// advance
-																			// window
-																			// base
-
-								baseIndex = unACKedSeqNo.get(1);
-							}
-							unACKedSeqNo.remove(new Short(seqNumReceived));
 							receivedACKSeqNo.add(new Short(seqNumReceived));
-							FileSender.buffer.remove(seqNumReceived);
+							while (receivedACKSeqNo.contains(baseIndex)) {
+								receivedACKSeqNo.remove((Short)baseIndex);
+								FileSender.buffer.remove((Short)baseIndex);
+								baseIndex++;
+							} 	
 						}
-					} else if (response == "NAK") {
+					} else if (response.equals("NAK")) {
 						// resend the packet
+						System.out.println("-----------------NAK Received--------------------");
 						DatagramPacket resendpkt = new DatagramPacket(FileSender.buffer.get(seqNumReceived),
 								FileSender.buffer.get(seqNumReceived).length, clientAddress, clientPort);
 						socket.send(resendpkt);
-					} else if (response == "FIN") {
+					} else if (response.equals("FIN")) {
+						System.out.println("-----------------FIN Received--------------------");
 						return;
 					}
 
@@ -149,8 +142,8 @@ public class FileSender {
 					for (int i = 0; i < sendData.length; i++) {
 						packet[i + 4] = sendData[i];
 					}
-					packet[2] = convertToBytes((short) checkSum(sendData))[0];
-					packet[3] = convertToBytes((short) checkSum(sendData))[1];
+					packet[2] = convertToBytes((short) checkSum(Arrays.copyOfRange(packet, 4, 1000)))[0];
+					packet[3] = convertToBytes((short) checkSum(Arrays.copyOfRange(packet, 4, 1000)))[1];
 				}
 			} else {
 				continue;
@@ -161,7 +154,7 @@ public class FileSender {
 			pkt = new DatagramPacket(packet, packet.length, clientAddress, clientPort);
 			socket.send(pkt);
 			seqNum++;
-			Thread.sleep(1000);
+			//Thread.sleep(1000);
 		}
 
 		System.out.println("File sent completed!");
