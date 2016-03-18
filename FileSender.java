@@ -13,21 +13,22 @@ import java.util.concurrent.*;
 
 public class FileSender {
 
-	public final int TIME_OUT_NS = 1000000000; // 1000ms
+	public final int TIME_OUT_NS = 10000000; // 10ms
 	public DatagramSocket socket;
 	public int clientPort;
 	public InetAddress clientAddress;
-	public final int WINDOW_SIZE = 10;
-	public int window_left = 10;
+	public final int WINDOW_SIZE = 200;
+	public int window_left = 100;
 	public Short baseIndex = 0;
 	public static ArrayList<Short> receivedACKSeqNo = new ArrayList<Short>();
-	Map<String, String> map = Collections.synchronizedMap(
-			  new LinkedHashMap<String, String>());
+	Map<String, String> map = Collections.synchronizedMap(new LinkedHashMap<String, String>());
 	public static Map<Short, byte[]> buffer = Collections.synchronizedMap(new LinkedHashMap<Short, byte[]>());
 	public static Map<Short, Long> timer = new ConcurrentHashMap<Short, Long>();
 	public boolean isEnd = false;
-	
+	public static long lastFeedbackTime = Long.MAX_VALUE;
+	public final long MAX_IDLE_INTERVAL = 50000000; // 50ms
 	// timer thread
+
 	class TimerThread extends Thread {
 		TimerThread() {
 			super("my timer thread");
@@ -35,42 +36,52 @@ public class FileSender {
 
 		public synchronized void run() {
 			try {
-				System.out.println("-----------------Timer is running--------------------");
+				// System.out.println("-----------------Timer is
+				// running--------------------");
 				while (!isEnd) {
-					System.out.println("-----------------Now Timer size is "+FileSender.timer.size()+"--------------------");
+					if (System.nanoTime() - lastFeedbackTime>MAX_IDLE_INTERVAL)
+						isEnd = true;
+
+					// System.out.println("-----------------Now Timer size is
+					// "+FileSender.timer.size()+"--------------------");
 					if (!timer.isEmpty()) {
 						Iterator<Short> it = timer.keySet().iterator();
-						if (it!=null){
-						while(it.hasNext()) {
-							System.out.println("---------it.next--------");
-							Short seq = it.next();
-							if (timer.containsKey(seq) && buffer.containsKey(seq)) {
-								System.out.println("---------before timer.get(seq)--------");
-								Long thisTime = timer.get(seq);
-								System.out.println("---------after timer.get(seq)--------");
-								if (thisTime != null) {
-									Long timeDiff = System.nanoTime() - thisTime;
-									System.out.println("----------------- Time Diff for seq"+seq+"is "+timeDiff+"!--------------------");
-									if (timeDiff > TIME_OUT_NS) {
-										System.out.println("----------------- Package number "+seq+" times out! Resending!--------------------");
-										byte[] byteArray = FileSender.buffer.get(seq);
-										if (byteArray != null) {
-											DatagramPacket resendpkt = new DatagramPacket(byteArray, byteArray.length, clientAddress, clientPort);
-											socket.send(resendpkt);
-											if (buffer.containsKey(seq)) timer.put(seq, System.nanoTime());
+						if (it != null) {
+							while (it.hasNext()) {
+								Short seq = it.next();
+								if (timer.containsKey(seq) && buffer.containsKey(seq)) {
+									Long thisTime = timer.get(seq);
+									if (thisTime != null) {
+										Long timeDiff = System.nanoTime() - thisTime;
+										// System.out.println("-----------------
+										// Time Diff for seq"+seq+"is
+										// "+timeDiff+"!--------------------");
+										if (timeDiff > TIME_OUT_NS) {
+											// System.out.println("-----------------
+											// Package number "+seq+" times out!
+											// Resending!--------------------");
+											byte[] byteArray = FileSender.buffer.get(seq);
+											if (byteArray != null) {
+												DatagramPacket resendpkt = new DatagramPacket(byteArray,
+														byteArray.length, clientAddress, clientPort);
+												socket.send(resendpkt);
+												if (buffer.containsKey(seq))
+													timer.put(seq, System.nanoTime());
+											}
 										}
 									}
 								}
 							}
 						}
-						}
 					}
 				}
 			} catch (Exception e) {
 				// TODO Auto-generated catch block
-				System.out.println("TIMER tread Exception: " + e.getClass() + " " + e.getMessage() + e.getLocalizedMessage() + e.getCause());
+				// System.out.println("TIMER tread Exception: " + e.getClass() +
+				// " " + e.getMessage() + e.getLocalizedMessage() +
+				// e.getCause());
 			}
-			System.out.println("Timer thread run is over");
+			// System.out.println("Timer thread run is over");
 		}
 	}
 
@@ -85,46 +96,59 @@ public class FileSender {
 			try {
 				byte[] rcvedBuffer = new byte[8];
 				DatagramPacket rcvedpkt = new DatagramPacket(rcvedBuffer, rcvedBuffer.length);
-				while (true) { // when comes to the end: this thread is not
+				while (!isEnd) { // when comes to the end: this thread is not
 								// alive
-					// should it be added only if it falls within the window?
-					System.out.println("-----------------Inside thread loop, baseIndex is"+baseIndex+"--------------------");
+					// System.out.println("-----------------Inside thread loop,
+					// baseIndex is"+baseIndex+"--------------------");
 					socket.receive(rcvedpkt);
+					lastFeedbackTime = System.nanoTime();
 					short seqNumReceived = convertToShort(Arrays.copyOfRange(rcvedBuffer, 0, 2));
 					String response = new String(Arrays.copyOfRange(rcvedBuffer, 2, 5));
-					System.out.println("-----------------RECEIVE PACKET "+seqNumReceived+" "+response+"--------------------");
-					if (response.equals("ACK")) {
-						System.out.println("-----------------ACK Received--------------------");
-						if (!receivedACKSeqNo.contains(seqNumReceived)) {
+					// System.out.println("-----------------RECEIVE PACKET
+					// "+seqNumReceived+" "+response+"--------------------");
+					short checkSumCompute = (short) checkSum(Arrays.copyOfRange(rcvedBuffer, 0, 5));
+
+					if (response.equals("ACK") && rcvedBuffer[5] == convertToBytes(checkSumCompute)[0]
+							&& rcvedBuffer[6] == convertToBytes(checkSumCompute)[1]) {
+						if (!receivedACKSeqNo.contains(seqNumReceived) && seqNumReceived < baseIndex + WINDOW_SIZE
+								&& seqNumReceived >= baseIndex) {
 							receivedACKSeqNo.add(new Short(seqNumReceived));
 							while (receivedACKSeqNo.contains(baseIndex)) {
-//								receivedACKSeqNo.remove((Short)baseIndex);
-								FileSender.timer.remove((Short)baseIndex);
-								FileSender.buffer.remove((Short)baseIndex);
+								FileSender.timer.remove((Short) baseIndex);
+								FileSender.buffer.remove((Short) baseIndex);
 								baseIndex++;
-							} 	
-						} else {
-							if (!FileSender.buffer.isEmpty()) {
-								System.out.println("-----------------Resending--------------------");
-								System.out.println("-----------------Now Buffer size is "+FileSender.buffer.size()+"--------------------");
-								byte[] resendPackage = FileSender.buffer.values().iterator().next();
-								DatagramPacket resendpkt = new DatagramPacket(resendPackage, resendPackage.length, clientAddress, clientPort);
-								socket.send(resendpkt);
 							}
 						}
-					} else if (response.equals("NAK")) {
-						// resend the packet
-						System.out.println("-----------------NAK Received--------------------");
-						if (!FileSender.buffer.isEmpty()) {
-							System.out.println("-----------------Resending--------------------");
-							System.out.println("-----------------Now Buffer size is "+FileSender.buffer.size()+"--------------------");
-							byte[] resendPackage = FileSender.buffer.values().iterator().next();
-							DatagramPacket resendpkt = new DatagramPacket(resendPackage, resendPackage.length, clientAddress, clientPort);
-							socket.send(resendpkt);
-							if (buffer.containsKey(baseIndex)) FileSender.timer.put((Short)baseIndex, System.nanoTime());
-						}
-					} else if (response.equals("FIN")) {
-						System.out.println("-----------------FIN Received--------------------");
+
+					}
+					// else if (response.equals("NAK")) {
+					// // resend the packet
+					// // System.out.println("-----------------NAK
+					// Received--------------------");
+					// Iterator<byte[]> it =
+					// FileSender.buffer.values().iterator();
+					// if (it != null) {
+					// //
+					// System.out.println("-----------------Resending--------------------");
+					// // System.out.println("-----------------Now Buffer
+					// // size is
+					// // "+FileSender.buffer.size()+"--------------------");
+					// if (it.hasNext()&&it.next()!=null) {
+					// byte[] resendPackage = it.next();
+					// DatagramPacket resendpkt = new
+					// DatagramPacket(resendPackage, resendPackage.length,
+					// clientAddress, clientPort);
+					// socket.send(resendpkt);
+					// if (buffer.containsKey(baseIndex))
+					// FileSender.timer.put((Short) baseIndex,
+					// System.nanoTime());
+					// }
+					// }
+					// }
+					else if (response.equals("FIN")) {
+						// System.out.println("-----------------FIN
+						// Received--------------------");
+
 						isEnd = true;
 						return;
 					}
@@ -133,7 +157,7 @@ public class FileSender {
 				// TODO Auto-generated catch block
 				System.out.println("IOException: " + e.getMessage());
 			}
-			System.out.println("My thread run is over");
+			System.out.println("ACK thread run is over");
 		}
 	}
 
@@ -146,14 +170,16 @@ public class FileSender {
 		}
 
 		try {
+
 			FileSender fs = new FileSender();
 			fs.run(args[0], args[1], args[2], args[3]);
 		} catch (Exception ex) {
-			System.out.println("Exception during " + ex.getClass().toString()+"  "+ ex.getMessage());
+			System.out.println("Exception during " + ex.getClass().toString() + "  " + ex.getMessage());
 		}
 	}
 
 	public synchronized void run(String fileToOpen, String host, String port, String rcvFileName) throws Exception {
+		Long time = System.nanoTime();
 		File file = new File(fileToOpen);
 		long sizeOfFile = file.length();
 
@@ -166,20 +192,21 @@ public class FileSender {
 
 		short seqNum = 0;
 		byte[] packet = new byte[1000];
-		int numberOfPackages = (int) (Math.ceil(sizeOfFile/996.0)+1);
+		int numberOfPackages = (int) (Math.ceil(sizeOfFile / 996.0) + 1);
 		int flag = 0;
 
 		// packet used to receive response
 		ACKThread ackThread = new ACKThread();
-		
-		// time-out thread
-		 TimerThread timerThread = new TimerThread();
-		 timerThread.start();
 
-		while (ackThread.isAlive()) {
+		// time-out thread
+		TimerThread timerThread = new TimerThread();
+		timerThread.start();
+
+		while (ackThread.isAlive() && !isEnd) {
 			byte[] sendData = new byte[996];
 			if (flag == 0) { // if this packet is first packet containing name
-			    System.out.println("----------------------------THIS IS THE FIRST PACKET---------------------------------");
+				// System.out.println("----------------------------THIS IS THE
+				// FIRST PACKET---------------------------------");
 
 				// first 2: seq num
 				// second 2: checksum
@@ -195,10 +222,12 @@ public class FileSender {
 				}
 				packet[2] = convertToBytes((short) checkSum(Arrays.copyOfRange(packet, 4, 1000)))[0];
 				packet[3] = convertToBytes((short) checkSum(Arrays.copyOfRange(packet, 4, 1000)))[1];
-			    System.out.println("-------------------------FILE NAME IS------"+sendData);	
+				// System.out.println("-------------------------FILE NAME
+				// IS------"+sendData);
 				flag++;
 			} else if (seqNum >= baseIndex && seqNum < (baseIndex + WINDOW_SIZE) && seqNum < numberOfPackages) {
-				System.out.println("-------------------------seq number inside window------ ");
+				// System.out.println("-------------------------seq number
+				// inside window------ ");
 				if ((bis.read(sendData)) >= 0) {
 					packet = new byte[1000];
 					packet[0] = convertToBytes(seqNum)[0];
@@ -212,17 +241,19 @@ public class FileSender {
 			} else {
 				continue;
 			}
-			System.out.println("-------------------------Sending packet number------ "+seqNum);
+			// System.out.println("-------------------------Sending packet
+			// number------ "+seqNum);
 			buffer.put(seqNum, packet);
 			timer.put(seqNum, System.nanoTime());
 			DatagramPacket pkt = new DatagramPacket(packet, packet.length, clientAddress, clientPort);
 			socket.send(pkt);
 			seqNum++;
-			//Thread.sleep(1000);
+			// Thread.sleep(1000);
 		}
-		
+
 		System.out.println("File sent completed!");
 		bis.close();
+		System.out.println("Run time: " + (System.nanoTime() - time) / 1000000 + " ms");
 		System.exit(1);
 	}
 
@@ -235,7 +266,7 @@ public class FileSender {
 	}
 
 	public short convertToShort(byte[] byteArray) {
-		short[] ans = new short[1];;
+		short[] ans = new short[1];
 		ByteBuffer.wrap(byteArray).order(ByteOrder.BIG_ENDIAN).asShortBuffer().get(ans);
 		return ans[0];
 	}

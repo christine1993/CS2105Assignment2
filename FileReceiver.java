@@ -11,7 +11,7 @@ class FileReceiver {
 
 	public DatagramSocket socket;
 	public DatagramPacket rcvedpkt;
-	public final int WINDOW_SIZE = 10;
+	public final int WINDOW_SIZE = 100;
 	public short nextSeqNo = 0; // the expected packet
 	public short seqNum;
 	public static ArrayList<Short> receivedSeqNo = new ArrayList<Short>();
@@ -35,7 +35,7 @@ class FileReceiver {
 	public void run(String localPort) throws Exception {
 		InetAddress serverAddress = InetAddress.getByName("localhost");
 		int portNumber = Integer.parseInt(localPort);
-		System.out.println("local port is " + portNumber);
+//		System.out.println("local port is " + portNumber);
 		String fileName = new String("dummy");
 		long fileSize = -1;
 		byte[] rcvBuffer = new byte[1000];
@@ -62,21 +62,21 @@ class FileReceiver {
 			// to check whether the received packet is in order (not timed out
 			// and retransmitted)
 			seqNum = convertToShort(Arrays.copyOfRange(rcvBuffer, 0, 2));
-			System.out.println("Received Sequence Number is : "+seqNum);
-		    System.out.println("Next SeqNum expected is : "+nextSeqNo);
+//			System.out.println("Received Sequence Number is : "+seqNum);
+//		    System.out.println("Next SeqNum expected is : "+nextSeqNo);
 		    
 			String response;
 			
-			byte[] rcvCheckSum = {rcvBuffer[2], rcvBuffer[3]};
-			System.out.println("CHECKSUM RECEIVED: "+this.convertToShort(rcvCheckSum));
-			System.out.println("CHECKSUM COMPUTED: "+checkSumCompute);
+			//byte[] rcvCheckSum = {rcvBuffer[2], rcvBuffer[3]};
+//			System.out.println("CHECKSUM RECEIVED: "+this.convertToShort(rcvCheckSum));
+//			System.out.println("CHECKSUM COMPUTED: "+checkSumCompute);
 			
 			if (rcvBuffer[2] == this.convertToBytes(checkSumCompute)[0]
 					&& rcvBuffer[3] == this.convertToBytes(checkSumCompute)[1])
 				response = "ACK";
 			else
 				response = "NAK";
-			System.out.println("-----------------RECEIVE PACKET "+seqNum+" "+response+"--------------------");
+//			System.out.println("-----------------RECEIVE PACKET "+seqNum+" "+response+"--------------------");
 			int l = response.getBytes().length;
 			for (int i = 0; i < l; i++)
 				responseByte[i + 2] = response.getBytes()[i];
@@ -90,7 +90,7 @@ class FileReceiver {
 				numberOfPackage = (int) (Math.ceil(fileSize/996.0)+1);
 				lastPackageLength = (int) (fileSize % 996 + 4);
 
-				System.out.println("File Name is " + fileName);
+//				System.out.println("File Name is " + fileName);
 				count++;
 				nextSeqNo++;
 				while (buffer.containsKey(nextSeqNo)) {
@@ -101,7 +101,7 @@ class FileReceiver {
 				}
 			} else if(response.equals("ACK")){
 				if (seqNum == nextSeqNo) {
-					System.out.println("-----------------Write PACKET "+seqNum+" --------------------");
+//					System.out.println("-----------------Write PACKET "+seqNum+" --------------------");
 					if (seqNum == numberOfPackage-1) bos.write(Arrays.copyOfRange(rcvBuffer, 4, lastPackageLength), 0, lastPackageLength-4);
 					else bos.write(Arrays.copyOfRange(rcvBuffer, 4, 1000), 0, rcvedpkt.getLength()-4);
 					count++;
@@ -116,6 +116,7 @@ class FileReceiver {
 					}
 				} else if (seqNum < nextSeqNo) {
 				} else { // seqNum > nextSeqNum, save to buffer
+//					System.out.println("--------------Buffer Size--------: "+buffer.size());
 					if (seqNum == numberOfPackage-1) buffer.put(seqNum, Arrays.copyOfRange(rcvBuffer, 4, lastPackageLength));
 					else buffer.put(seqNum, Arrays.copyOfRange(rcvBuffer, 4, rcvedpkt.getLength()));
 				}
@@ -147,7 +148,7 @@ class FileReceiver {
 			throws IOException, InterruptedException {
 		DatagramPacket pkt = new DatagramPacket(response, response.length, IPAddress, portNubmer);
 		socket.send(pkt);
-		System.out.println("-----------------Sending Respond "+response+"--------------------");
+//		System.out.println("-----------------Sending Respond "+response+"--------------------");
 	}
 
 	public byte[] convertToBytes(short value) {
